@@ -42,6 +42,21 @@ async function run() {
 
 
     // ===================== Parcel Related API ================================
+
+    // ------------------- Api to get percel to Database ------------------------
+    app.get('/parcel',async(req,res)=>{
+        const query = {} ;
+        const email = req.query.email ;
+        if(email){
+            query.senderEmail = email ;
+        }
+        const cursor = await parcelCollection.find(query) ;
+        const result = await cursor.toArray() ;
+        res.send(result) ;
+    }) 
+
+    
+    // -------------------- Api to Add percel to Database --------------------------- 
     app.post('/parcel',async(req,res)=>{
         const newParcel = req.body ;
         const result =await parcelCollection.insertOne(newParcel) ;
