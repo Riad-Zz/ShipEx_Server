@@ -63,6 +63,13 @@ async function run() {
       res.send(result) ;
     })
 
+    // ----------------------  APi to delete Parcel By Id ----------------------
+    app.delete('/parcel/:id' , async(req,res)=>{
+      const parcel_id = req.params.id ;
+      const query = {_id : new ObjectId(parcel_id)} ;
+      const result = await parcelCollection.deleteOne(query) ;
+      res.send(result) ;
+    })
     
     // -------------------- Api to Add percel to Database --------------------------- 
     app.post('/parcel',async(req,res)=>{
