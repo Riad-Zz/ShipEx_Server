@@ -79,6 +79,7 @@ async function run() {
       res.send(result);
     });
 
+
     // ------------- Stripe Payment Gateway ----------------------
     app.post("/create-checkout-session", async (req, res) => {
       const paymentInfo = req.body;
@@ -92,7 +93,7 @@ async function run() {
                 name:  `Payment for parcel ${paymentInfo.parcelname}`,
               },
               unit_amount: parcelAmoumt,
-              currency: "bdt",
+              currency: "usd",
             },
             quantity: 1,
           },
@@ -102,13 +103,34 @@ async function run() {
         metadata: {
           parcel_id: paymentInfo.id,
         },
-        success_url: `${process.env.STRIPE_DOMAIN}/paymentsuccess`,
+        success_url: `${process.env.STRIPE_DOMAIN}/paymentsuccess?session_id={CHECKOUT_SESSION_ID}`,
         cancel_url: `${process.env.STRIPE_DOMAIN}/paymentcancel`,
       });
 
       console.log(session);
       res.send({ url: session.url });
     });
+
+    // ------------------ Stripe Payment Varify and Update Info --------------------------
+    app.patch('/session-status',async(req,res)=>{
+      const session_id = req.query.session_id ;
+      const session = await stripe.checkout.sessions.retrieve(session_id)
+      console.log(session) ; 
+      if(session.payment_status === 'paid'){
+        const parcel_id = session.metadata.parcel_id ;
+        const query = {_id : new ObjectId(parcel_id)} ;
+        const update = {
+          $set : {
+            paymentStatus : "paid"
+          }
+        }
+        const result = await parcelCollection.updateOne(query , update) ;
+        res.send(result) ;
+      }
+      // console.log(session.metadata.parcel_id)
+      res.send({status : true}) ;
+    }) 
+
 
     //----------------------- Reminder  -> Comment this Out when deploying to vercel -------------------
     await client.db("admin").command({ ping: 1 });
