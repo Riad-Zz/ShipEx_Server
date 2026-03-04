@@ -2,7 +2,7 @@
 require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
-const { MongoClient, ServerApiVersion } = require("mongodb");
+const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 
 // =============== Initial Ports and Connections =============================
 const app = express();
@@ -43,7 +43,7 @@ async function run() {
 
     // ===================== Parcel Related API ================================
 
-    // ------------------- Api to get percel to Database ------------------------
+    // ------------------- Api to get percel from Database ------------------------
     app.get('/parcel',async(req,res)=>{
         const query = {} ;
         const email = req.query.email ;
@@ -55,10 +55,19 @@ async function run() {
         res.send(result) ;
     }) 
 
+    // ----------------------  APi to get Parcel By Id ----------------------
+    app.get('/parcel/:id' , async(req,res)=>{
+      const parcel_id = req.params.id ;
+      const query = {_id : new ObjectId(parcel_id)} ;
+      const result =await parcelCollection.findOne(query)
+      res.send(result) ;
+    })
+
     
     // -------------------- Api to Add percel to Database --------------------------- 
     app.post('/parcel',async(req,res)=>{
         const newParcel = req.body ;
+        newParcel.createdAt = new Date() ;
         const result =await parcelCollection.insertOne(newParcel) ;
         res.send(result) ;
     })
