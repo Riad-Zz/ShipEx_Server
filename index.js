@@ -87,6 +87,22 @@ async function run() {
       res.send(result);
     });
 
+    // --------------- APi to get Payment history from db -----------------
+    app.get('/payhistory' , async(req,res)=>{
+      const query = {} ;
+      const email = req.query.email 
+      if(email){
+        query.customer_email = email 
+      }
+      const cursor = await paymentCollection.find(query)
+      const result = await cursor.toArray() ;
+      res.send(result) ;
+    })
+
+
+
+    // ============================ PAYMENT FUNCTIONALITY(STRIPE) RELATED APIS =========================
+
     // ------------- Stripe Payment Gateway ----------------------
     app.post("/create-checkout-session", async (req, res) => {
       const paymentInfo = req.body;
@@ -100,7 +116,7 @@ async function run() {
                 name: `Payment for parcel ${paymentInfo.parcelname}`,
               },
               unit_amount: parcelAmoumt,
-              currency: "usd",
+              currency: "bdt",
             },
             quantity: 1,
           },
@@ -149,6 +165,7 @@ async function run() {
           receiverContact: session.metadata.receiver_contact,
           receiverName: session.metadata.receiver_name,
           transaction_id: session.payment_intent,
+          tracking_id : tracking_id ,
           payment_status: session.payment_status,
           paidAt: new Date(),
         };
@@ -164,6 +181,8 @@ async function run() {
       }
     });
 
+
+
     //----------------------- Reminder  -> Comment this Out when deploying to vercel -------------------
     await client.db("admin").command({ ping: 1 });
     console.log(
@@ -174,6 +193,8 @@ async function run() {
   }
 }
 run().catch(console.dir);
+
+
 
 // =============== Listener  ============================
 app.listen(port, () => {
