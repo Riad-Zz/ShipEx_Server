@@ -18,6 +18,13 @@ app.get("/", (req, res) => {
   res.send("ShipEx is Running !");
 });
 
+// ====================== Tracking id generator ==========================
+function generateTrackingId() {
+  const time = Date.now().toString().slice(-4); // last 4 digits
+  const random = Math.floor(100 + Math.random() * 900); // 3 digit random
+  return `SHIPX-${time}${random}`;
+}
+
 // ================== ** Mongo Uri and Mongo Client ** ==============================
 
 // ------------------ Mongo Uri -----------------------
@@ -40,6 +47,7 @@ async function run() {
     // ========================== Databases & all Collection here ======================================
     const database = client.db("ShipEx");
     const parcelCollection = database.collection("percels");
+    const paymentCollection = database.collection("payments");
 
     // ===================== Parcel Related API ================================
 
@@ -79,7 +87,6 @@ async function run() {
       res.send(result);
     });
 
-
     // ------------- Stripe Payment Gateway ----------------------
     app.post("/create-checkout-session", async (req, res) => {
       const paymentInfo = req.body;
@@ -90,7 +97,7 @@ async function run() {
           {
             price_data: {
               product_data: {
-                name:  `Payment for parcel ${paymentInfo.parcelname}`,
+                name: `Payment for parcel ${paymentInfo.parcelname}`,
               },
               unit_amount: parcelAmoumt,
               currency: "usd",
@@ -99,38 +106,63 @@ async function run() {
           },
         ],
         customer_email: paymentInfo.senderEmail,
-        mode: 'payment',
+        mode: "payment",
         metadata: {
           parcel_id: paymentInfo.id,
+          receiver_name: paymentInfo.receiverName,
+          receiver_address: paymentInfo.receiverAddress,
+          receiver_contact: paymentInfo.receiverContact,
         },
         success_url: `${process.env.STRIPE_DOMAIN}/paymentsuccess?session_id={CHECKOUT_SESSION_ID}`,
         cancel_url: `${process.env.STRIPE_DOMAIN}/paymentcancel`,
       });
 
-      console.log(session);
+      // console.log(session);
       res.send({ url: session.url });
     });
 
     // ------------------ Stripe Payment Varify and Update Info --------------------------
-    app.patch('/session-status',async(req,res)=>{
-      const session_id = req.query.session_id ;
-      const session = await stripe.checkout.sessions.retrieve(session_id)
-      console.log(session) ; 
-      if(session.payment_status === 'paid'){
-        const parcel_id = session.metadata.parcel_id ;
-        const query = {_id : new ObjectId(parcel_id)} ;
-        const update = {
-          $set : {
-            paymentStatus : "paid"
-          }
-        }
-        const result = await parcelCollection.updateOne(query , update) ;
-        res.send(result) ;
-      }
-      // console.log(session.metadata.parcel_id)
-      res.send({status : true}) ;
-    }) 
+    app.patch("/session-status", async (req, res) => {
+      const session_id = req.query.session_id;
+      const session = await stripe.checkout.sessions.retrieve(session_id);
+      // console.log(session);
+      const tracking_id = generateTrackingId() ;
 
+      if (session.payment_status === "paid") {
+        const parcel_id = session.metadata.parcel_id;
+        const query = { _id: new ObjectId(parcel_id) };
+        const update = {
+          $set: {
+            paymentStatus: "paid",
+            tracking_id : tracking_id ,
+          },
+        };
+        const result = await parcelCollection.updateOne(query, update);
+
+        // ------------  Create payment history info --------------- 
+        const payment = {
+          amount: session.amount_total / 100,
+          currency: session.currency,
+          customer_email: session.customer_email,
+          parcel_id: session.metadata.parcel_id,
+          receiverAddress: session.metadata.receiver_address,
+          receiverContact: session.metadata.receiver_contact,
+          receiverName: session.metadata.receiver_name,
+          transaction_id: session.payment_intent,
+          payment_status: session.payment_status,
+          paidAt: new Date(),
+        };
+
+        const newPayment = await paymentCollection.insertOne(payment) ;
+        res.send({
+          success : true ,
+          modified_parce: result ,
+          tracking_id : tracking_id ,
+          transaction_id : session.payment_intent ,
+          payment_info : newPayment , 
+        });
+      }
+    });
 
     //----------------------- Reminder  -> Comment this Out when deploying to vercel -------------------
     await client.db("admin").command({ ping: 1 });
