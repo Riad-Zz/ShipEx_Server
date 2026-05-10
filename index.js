@@ -12,6 +12,13 @@ const port = process.env.PORT || 3000;
 // ====================== MiddleWire ===================================
 app.use(cors());
 app.use(express.json());
+const admin = require("firebase-admin");
+const serviceAccount = require("./firebasekey.json");
+
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount)
+});
+
 
 // ============================ Test Api ===================================
 app.get("/", (req, res) => {
@@ -23,6 +30,23 @@ function generateTrackingId() {
   const time = Date.now().toString().slice(-4); // last 4 digits
   const random = Math.floor(100 + Math.random() * 900); // 3 digit random
   return `SHIPX-${time}${random}`;
+}
+
+// ====================== FireBase Token Varify ==========================
+const firebaseTokenVarify = async(req,res,next)=>{
+  if(!req.headers.authorization) {
+    return res.status(401).send({ message: "Unauthorize Access !" });
+  }
+  const token = req.headers.authorization.split(" ")[1] ;
+  // console.log(token) ;
+  try {
+    const userInfo = await admin.auth().verifyIdToken(token);
+    req.token_email = userInfo.email;
+    // console.log(userInfo) ;
+    next();
+  } catch {
+    return res.status(401).send({ message: "Unauthorize Access ! " });
+  }
 }
 
 // ================== ** Mongo Uri and Mongo Client ** ==============================
@@ -88,9 +112,10 @@ async function run() {
     });
 
     // --------------- APi to get Payment history from db -----------------
-    app.get('/payhistory' , async(req,res)=>{
+    app.get('/payhistory',firebaseTokenVarify,async(req,res)=>{
       const query = {} ;
-      const email = req.query.email 
+      const email = req.query.email ;
+      // console.log(req) ;
       if(email){
         query.customer_email = email 
       }
