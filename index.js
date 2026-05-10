@@ -144,6 +144,18 @@ async function run() {
       // console.log(session);
       const tracking_id = generateTrackingId() ;
 
+      //------------- Prevent Duplicate Payment Entry ------------------
+      const transaction_id = session.payment_intent ;
+      const query = {transaction_id : transaction_id} 
+      const payment_exist = await paymentCollection.findOne(query) ;
+      if(payment_exist){
+        return  res.send({message : 'already Exist !!' , tracking_id : tracking_id ,
+          transaction_id : payment_exist.transaction_id ,
+          tracking_id : payment_exist.tracking_id
+          })
+      } 
+
+
       if (session.payment_status === "paid") {
         const parcel_id = session.metadata.parcel_id;
         const query = { _id: new ObjectId(parcel_id) };
@@ -178,6 +190,9 @@ async function run() {
           transaction_id : session.payment_intent ,
           payment_info : newPayment , 
         });
+
+        
+
       }
     });
 
