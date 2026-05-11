@@ -263,7 +263,7 @@ async function run() {
       const result = await riderCollection.insertOne(riderInfo) ;
       res.send(result) ;
     })
-    
+
     // *-------------- api to get all the Rider from database -----------------------
     app.get('/riders' , async(req,res)=>{
       const query = {} ;
@@ -272,6 +272,13 @@ async function run() {
       res.send(result) ;
     })
 
+    // *-------------- api to get a Rider from database by Specific id-----------------------
+    app.get('/riders/:id' , async(req,res)=>{
+      const rider_id = req.params.id ;
+      const query = {_id : new ObjectId(rider_id)} ;
+      const result = await riderCollection.findOne(query) ;
+      res.send(result) ;
+    })
 
     //!================================  Reminder  -> Comment this Out when deploying to vercel ================================ 
     // await client.db("admin").command({ ping: 1 });
