@@ -70,15 +70,17 @@ async function run() {
     //---------------------- Reminder-> Comment this Out when deploying to vercel ----------------------
     // await client.connect();
 
-    // ========================== Databases & all Collection here ======================================
+    // *? ================================ Databases & all Collection here ==========================================
     const database = client.db("ShipEx");
     const parcelCollection = database.collection("percels");
     const paymentCollection = database.collection("payments");
+    const userCollection = database.collection("users") ;
 
-    // ===================== Parcel Related API ================================
 
+
+   // *? ================================ Parcel Related APIs ==============================================
     // ------------------- Api to get percel from Database ------------------------
-    app.get("/parcel", async (req, res) => {
+    app.get("/parcel",firebaseTokenVarify ,async (req, res) => {
       const query = {};
       const email = req.query.email;
       if (email) {
@@ -90,7 +92,7 @@ async function run() {
     });
 
     // ----------------------  APi to get Parcel By Id ----------------------
-    app.get("/parcel/:id", async (req, res) => {
+    app.get("/parcel/:id",firebaseTokenVarify,async (req, res) => {
       const parcel_id = req.params.id;
       const query = { _id: new ObjectId(parcel_id) };
       const result = await parcelCollection.findOne(query);
@@ -128,8 +130,7 @@ async function run() {
 
 
 
-    // ============================ PAYMENT FUNCTIONALITY(STRIPE) RELATED APIS =========================
-
+    // *? ================================ PAYMENT FUNCTIONALITY(STRIPE) RELATED APIS ==========================================
     // ------------- Stripe Payment Gateway ----------------------
     app.post("/create-checkout-session", async (req, res) => {
       const paymentInfo = req.body;
@@ -163,6 +164,7 @@ async function run() {
       // console.log(session);
       res.send({ url: session.url });
     });
+
 
     // ------------------ Stripe Payment Varify and Update Info --------------------------
     app.patch("/session-status", async (req, res) => {
@@ -224,6 +226,24 @@ async function run() {
     });
 
 
+    // *? ================================ User Related APis ==========================================
+    //-------------- api to save new user to database with role user -----------------------
+    app.post("/users" , async(req,res) => {
+      const query = {} ;
+      const userInfo = req.body ;
+      const email = userInfo?.email ;
+      if(email){
+        query.email = email ;
+      }
+      const userExist = await userCollection.findOne(query) ;
+      if(userExist){
+        return res.send({message:"user already Exist !"}) ;
+      }
+      userInfo.createdAt = new Date() ;
+      userInfo.role = 'user' ;
+      const result = await userCollection.insertOne(userInfo) ;
+      res.send(result) ;
+    })
 
     //----------------------- Reminder  -> Comment this Out when deploying to vercel -------------------
     // await client.db("admin").command({ ping: 1 });
