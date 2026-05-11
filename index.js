@@ -68,7 +68,7 @@ const client = new MongoClient(uri, {
 async function run() {
   try {
     //---------------------- Reminder-> Comment this Out when deploying to vercel ----------------------
-    await client.connect();
+    // await client.connect();
 
     // ========================== Databases & all Collection here ======================================
     const database = client.db("ShipEx");
