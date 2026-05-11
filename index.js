@@ -75,11 +75,12 @@ async function run() {
     const parcelCollection = database.collection("percels");
     const paymentCollection = database.collection("payments");
     const userCollection = database.collection("users") ;
+    const riderCollection = database.collection("riders") ;
 
 
 
    // *? ================================ Parcel Related APIs ==============================================
-    // ------------------- Api to get percel from Database ------------------------
+    //* ------------------- Api to get percel from Database ------------------------
     app.get("/parcel",firebaseTokenVarify ,async (req, res) => {
       const query = {};
       const email = req.query.email;
@@ -91,7 +92,7 @@ async function run() {
       res.send(result);
     });
 
-    // ----------------------  APi to get Parcel By Id ----------------------
+    //* ----------------------  APi to get Parcel By Id ----------------------
     app.get("/parcel/:id",firebaseTokenVarify,async (req, res) => {
       const parcel_id = req.params.id;
       const query = { _id: new ObjectId(parcel_id) };
@@ -99,7 +100,7 @@ async function run() {
       res.send(result);
     });
 
-    // ----------------------  APi to delete Parcel By Id ----------------------
+    //* ----------------------  APi to delete Parcel By Id ----------------------
     app.delete("/parcel/:id", async (req, res) => {
       const parcel_id = req.params.id;
       const query = { _id: new ObjectId(parcel_id) };
@@ -107,7 +108,7 @@ async function run() {
       res.send(result);
     });
 
-    // -------------------- Api to Add percel to Database ---------------------------
+    //* -------------------- Api to Add percel to Database ---------------------------
     app.post("/parcel", async (req, res) => {
       const newParcel = req.body;
       newParcel.createdAt = new Date();
@@ -115,7 +116,7 @@ async function run() {
       res.send(result);
     });
 
-    // --------------- APi to get Payment history from db -----------------
+    //* --------------- APi to get Payment history from db -----------------
     app.get('/payhistory',firebaseTokenVarify,async(req,res)=>{
       const query = {} ;
       const email = req.query.email ;
@@ -131,7 +132,7 @@ async function run() {
 
 
     // *? ================================ PAYMENT FUNCTIONALITY(STRIPE) RELATED APIS ==========================================
-    // ------------- Stripe Payment Gateway ----------------------
+    //* ------------- Stripe Payment Gateway ----------------------
     app.post("/create-checkout-session", async (req, res) => {
       const paymentInfo = req.body;
       const parcelAmoumt = parseInt(paymentInfo.amount) * 100;
@@ -166,7 +167,7 @@ async function run() {
     });
 
 
-    // ------------------ Stripe Payment Varify and Update Info --------------------------
+    //* ------------------ Stripe Payment Varify and Update Info --------------------------
     app.patch("/session-status", async (req, res) => {
       const session_id = req.query.session_id;
       const session = await stripe.checkout.sessions.retrieve(session_id);
@@ -196,7 +197,7 @@ async function run() {
         };
         const result = await parcelCollection.updateOne(query, update);
 
-        // ------------  Create payment history info --------------- 
+        //* ------------  Create payment history info --------------- 
         const payment = {
           amount: session.amount_total / 100,
           currency: session.currency,
@@ -227,7 +228,7 @@ async function run() {
 
 
     // *? ================================ User Related APis ==========================================
-    //-------------- api to save new user to database with role user -----------------------
+    // *-------------- api to save new user to database with role user -----------------------
     app.post("/users" , async(req,res) => {
       const query = {} ;
       const userInfo = req.body ;
@@ -245,7 +246,34 @@ async function run() {
       res.send(result) ;
     })
 
-    //----------------------- Reminder  -> Comment this Out when deploying to vercel -------------------
+    // *-------------- api to save new Rider Request to database -----------------------
+    app.post('/riders' , async(req,res)=>{
+      const riderInfo = req.body ;
+      const query = {} ;
+      const email = riderInfo.email ;
+      riderInfo.createdAt = new Date() ;
+      riderInfo.status = "pending" ;
+      if(email){
+        query.email = email ;
+      }
+      const existingRider = await riderCollection.findOne(query) ;
+      if(existingRider){
+        return res.send({message : "Rider Already Exist !"})
+      }
+      const result = await riderCollection.insertOne(riderInfo) ;
+      res.send(result) ;
+    })
+    
+    // *-------------- api to get all the Rider from database -----------------------
+    app.get('/riders' , async(req,res)=>{
+      const query = {} ;
+      const cursor = await riderCollection.find(query)
+      const result = await cursor.toArray() ;
+      res.send(result) ;
+    })
+
+
+    //!================================  Reminder  -> Comment this Out when deploying to vercel ================================ 
     // await client.db("admin").command({ ping: 1 });
     console.log(
       "Pinged your deployment. You successfully connected to MongoDB!",
