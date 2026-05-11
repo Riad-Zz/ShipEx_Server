@@ -279,6 +279,30 @@ async function run() {
       const result = await riderCollection.findOne(query) ;
       res.send(result) ;
     })
+    // *-------------- api to Approve OR Reject a Rider Application by Specific id-----------------------
+    app.post('/riders/:id' , async(req,res)=>{
+      const rider_id = req.params.id ;
+      const user_email = req.body.email ;
+      const status = req.body.status ;
+      const query = {_id : new ObjectId(rider_id)}
+      const updateFields = {
+        $set : {
+          status : status
+        }
+      }
+      const result = await riderCollection.updateOne(query,updateFields)
+      if(status ==="approved"){
+        const roleQuery = {email : user_email}
+        const roleUpdate = {
+          $set : {
+            role : 'rider'
+          }
+        }
+        const result = await userCollection.updateOne(roleQuery,roleUpdate)
+      }
+      res.send(result) ;
+    })
+
 
     //!================================  Reminder  -> Comment this Out when deploying to vercel ================================ 
     // await client.db("admin").command({ ping: 1 });
