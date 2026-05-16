@@ -228,7 +228,7 @@ async function run() {
 
     // *? ================================ User Related APis ==========================================
     // *-------------- api to save new user to database with role user -----------------------
-    app.post("/users" ,firebaseTokenVarify ,async(req,res) => {
+    app.post("/users" ,async(req,res) => {
       const query = {} ;
       const userInfo = req.body ;
       const email = userInfo?.email ;
@@ -252,6 +252,29 @@ async function run() {
       const result = await cursor.toArray();
       res.send(result) ;
     })
+
+    // *-------------- api to get a the user by Role from database-----------------------
+    app.get('/users/:email/role' , async(req,res)=>{
+      const {email} = req.params ;
+      const query = {email} ;
+      const result = await userCollection.findOne(query) ;
+      res.send({role : result?.role || 'user'})
+    })
+
+    // *-------------- api to get promote or Revoke a user to A Role-----------------------
+    app.post('/users/:id' , async(req,res)=>{
+      const user_id = req.params.id
+      const {status} = req.body ;
+      const query = {_id : new ObjectId(user_id)}
+      const update = {
+        $set : {
+          role : status
+        }
+      }
+      const result = await userCollection.updateOne(query,update) ;
+      res.send(result) ;
+    })
+
 
     // *-------------- api to save new Rider Request to database -----------------------
     app.post('/riders' , async(req,res)=>{
