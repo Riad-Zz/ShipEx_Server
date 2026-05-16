@@ -222,14 +222,13 @@ async function run() {
         });
 
         
-
       }
     });
 
 
     // *? ================================ User Related APis ==========================================
     // *-------------- api to save new user to database with role user -----------------------
-    app.post("/users" , async(req,res) => {
+    app.post("/users" ,firebaseTokenVarify ,async(req,res) => {
       const query = {} ;
       const userInfo = req.body ;
       const email = userInfo?.email ;
@@ -243,6 +242,14 @@ async function run() {
       userInfo.createdAt = new Date() ;
       userInfo.role = 'user' ;
       const result = await userCollection.insertOne(userInfo) ;
+      res.send(result) ;
+    })
+
+    // *-------------- api to get all the user from database-----------------------
+    app.get('/users',firebaseTokenVarify,async(req,res)=>{
+      const query = {} 
+      const cursor = await userCollection.find(query) ;
+      const result = await cursor.toArray();
       res.send(result) ;
     })
 
@@ -303,6 +310,7 @@ async function run() {
       res.send(result) ;
     })
 
+    
 
     //!================================  Reminder  -> Comment this Out when deploying to vercel ================================ 
     // await client.db("admin").command({ ping: 1 });
