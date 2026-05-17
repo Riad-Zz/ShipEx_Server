@@ -91,13 +91,16 @@ async function run() {
 
    // *? ================================ Parcel Related APIs ==============================================
     //* ------------------- Api to get percel from Database ------------------------
-    app.get("/parcel",firebaseTokenVarify ,async (req, res) => {
+    app.get("/parcel",async (req, res) => {
       const query = {};
-      const email = req.query.email;
+      const {email,deliveryStatus} = req.query;
       if (email) {
         query.senderEmail = email;
       }
-      const cursor = await parcelCollection.find(query);
+      if(deliveryStatus) {
+        query.deliveryStatus = deliveryStatus
+      }
+      const cursor = await parcelCollection.find(query).sort({createdAt : -1});
       const result = await cursor.toArray();
       res.send(result);
     });
@@ -117,6 +120,29 @@ async function run() {
       const result = await parcelCollection.deleteOne(query);
       res.send(result);
     });
+
+    app.patch('/parcel/:id' , async(req,res)=>{
+      const {rider_id,rider_name,rider_email} = req.body ;
+      const parcel_id = req.params.id ;
+      const query = {_id : new ObjectId(parcel_id)}
+      const updatedInfo = {
+        $set : {
+          deliveryStatus : 'rider_assigned' ,
+          rider_id : rider_id,
+          rider_name : rider_name ,
+          rider_email : rider_email
+        }
+      }
+      const result = await parcelCollection.updateOne(query , updatedInfo) 
+      const riderQuery = {_id : new ObjectId(rider_id)}  ;
+      const riderUpdate = {
+        $set : {
+          work_status : 'assigned'
+        }
+      }
+      const rider_result = await riderCollection.updateOne(riderQuery,riderUpdate) ;
+      res.send(rider_result) ;
+    })
 
     //* -------------------- Api to Add percel to Database ---------------------------
     app.post("/parcel", async (req, res) => {
@@ -201,6 +227,7 @@ async function run() {
         const query = { _id: new ObjectId(parcel_id) };
         const update = {
           $set: {
+            deliveryStatus : 'awaiting_pickup',
             paymentStatus: "paid",
             tracking_id : tracking_id ,
           },
@@ -270,7 +297,7 @@ async function run() {
       const result = await cursor.toArray();
       res.send(result) ;
     })
-    
+
 
     // *-------------- api to get a the user by Role from database-----------------------
     app.get('/users/:email/role' , async(req,res)=>{
@@ -314,9 +341,19 @@ async function run() {
     })
 
     // *-------------- api to get all the Rider from database -----------------------
-    app.get('/riders' ,firebaseTokenVarify ,async(req,res)=>{
+    app.get('/riders' ,async(req,res)=>{
+      const {status,work_status,district} = req.query ;
       const query = {} ;
-      const cursor = await riderCollection.find(query)
+      if(status){
+        query.status = status 
+      }
+      if(work_status){
+        query.work_status = work_status
+      }
+      if(district){
+        query.district = district
+      }
+      const cursor = await riderCollection.find(query).sort({createdAt : -1})
       const result = await cursor.toArray() ;
       res.send(result) ;
     })
@@ -328,6 +365,7 @@ async function run() {
       const result = await riderCollection.findOne(query) ;
       res.send(result) ;
     })
+
     // *-------------- api to Approve OR Reject a Rider Application by Specific id-----------------------
     app.post('/riders/:id' , firebaseTokenVarify,varifyAdmin,async(req,res)=>{
       const rider_id = req.params.id ;
@@ -336,7 +374,8 @@ async function run() {
       const query = {_id : new ObjectId(rider_id)}
       const updateFields = {
         $set : {
-          status : status
+          status : status, 
+          work_status : 'available'
         }
       }
       const result = await riderCollection.updateOne(query,updateFields)
