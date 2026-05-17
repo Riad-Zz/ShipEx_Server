@@ -14,13 +14,14 @@ app.use(cors());
 app.use(express.json());
 const admin = require("firebase-admin");
 // const serviceAccount = require("./firebasekey.json");
-const decoded = Buffer.from(process.env.FIREBASE_KEY, "base64").toString("utf8");
+const decoded = Buffer.from(process.env.FIREBASE_KEY, "base64").toString(
+  "utf8",
+);
 const serviceAccount = JSON.parse(decoded);
 
 admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount)
+  credential: admin.credential.cert(serviceAccount),
 });
-
 
 // ============================ Test Api ===================================
 app.get("/", (req, res) => {
@@ -35,11 +36,11 @@ function generateTrackingId() {
 }
 
 // ====================== FireBase Token Varify ==========================
-const firebaseTokenVarify = async(req,res,next)=>{
-  if(!req.headers.authorization) {
+const firebaseTokenVarify = async (req, res, next) => {
+  if (!req.headers.authorization) {
     return res.status(401).send({ message: "Unauthorize Access !" });
   }
-  const token = req.headers.authorization.split(" ")[1] ;
+  const token = req.headers.authorization.split(" ")[1];
   // console.log(token) ;
   try {
     const userInfo = await admin.auth().verifyIdToken(token);
@@ -49,7 +50,7 @@ const firebaseTokenVarify = async(req,res,next)=>{
   } catch {
     return res.status(401).send({ message: "Unauthorize Access ! " });
   }
-}
+};
 
 // ================== ** Mongo Uri and Mongo Client ** ==============================
 
@@ -74,39 +75,41 @@ async function run() {
     const database = client.db("ShipEx");
     const parcelCollection = database.collection("percels");
     const paymentCollection = database.collection("payments");
-    const userCollection = database.collection("users") ;
-    const riderCollection = database.collection("riders") ;
+    const userCollection = database.collection("users");
+    const riderCollection = database.collection("riders");
 
     // *? ================================ MiddleWare to Varify Admin ==========================================
-    const varifyAdmin = async(req,res,next) => {
-      const email = req.token_email ;
-      const query = {email} ;
-      const user = await userCollection.findOne(query) ;
-      if(!user || user.role !== 'admin'){
-        return res.status(403).send({message: "Unauthorize Access ! "}) ;
+    const varifyAdmin = async (req, res, next) => {
+      const email = req.token_email;
+      const query = { email };
+      const user = await userCollection.findOne(query);
+      if (!user || user.role !== "admin") {
+        return res.status(403).send({ message: "Unauthorize Access ! " });
       }
-      next() ;
-    }
+      next();
+    };
 
-
-   // *? ================================ Parcel Related APIs ==============================================
+    // *? ================================ Parcel Related APIs ==============================================
     //* ------------------- Api to get percel from Database ------------------------
-    app.get("/parcel",async (req, res) => {
+    app.get("/parcel", async (req, res) => {
       const query = {};
-      const {email,deliveryStatus} = req.query;
+      const { email, deliveryStatus, riderEmail } = req.query;
       if (email) {
         query.senderEmail = email;
       }
-      if(deliveryStatus) {
-        query.deliveryStatus = deliveryStatus
+      if (riderEmail) {
+        query.rider_email = riderEmail;
       }
-      const cursor = await parcelCollection.find(query).sort({createdAt : -1});
+      if (deliveryStatus) {
+        query.deliveryStatus = deliveryStatus;
+      }
+      const cursor = await parcelCollection.find(query).sort({ createdAt: -1 });
       const result = await cursor.toArray();
       res.send(result);
     });
 
     //* ----------------------  APi to get Parcel By Id ----------------------
-    app.get("/parcel/:id",firebaseTokenVarify,async (req, res) => {
+    app.get("/parcel/:id", firebaseTokenVarify, async (req, res) => {
       const parcel_id = req.params.id;
       const query = { _id: new ObjectId(parcel_id) };
       const result = await parcelCollection.findOne(query);
@@ -121,28 +124,93 @@ async function run() {
       res.send(result);
     });
 
-    app.patch('/parcel/:id' , async(req,res)=>{
-      const {rider_id,rider_name,rider_email} = req.body ;
-      const parcel_id = req.params.id ;
-      const query = {_id : new ObjectId(parcel_id)}
+    //* ----------------------  APi to Assign a Rider a Parcel ----------------------
+    app.patch("/parcel/:id", async (req, res) => {
+      const { rider_id, rider_name, rider_email } = req.body;
+      const parcel_id = req.params.id;
+      const query = { _id: new ObjectId(parcel_id) };
       const updatedInfo = {
-        $set : {
-          deliveryStatus : 'rider_assigned' ,
-          rider_id : rider_id,
-          rider_name : rider_name ,
-          rider_email : rider_email
-        }
-      }
-      const result = await parcelCollection.updateOne(query , updatedInfo) 
-      const riderQuery = {_id : new ObjectId(rider_id)}  ;
+        $set: {
+          deliveryStatus: "rider_assigned",
+          rider_id: rider_id,
+          rider_name: rider_name,
+          rider_email: rider_email,
+        },
+      };
+      const result = await parcelCollection.updateOne(query, updatedInfo);
+      const riderQuery = { _id: new ObjectId(rider_id) };
       const riderUpdate = {
-        $set : {
-          work_status : 'assigned'
+        $set: {
+          work_status: "assigned",
+        },
+      };
+      const rider_result = await riderCollection.updateOne(
+        riderQuery,
+        riderUpdate,
+      );
+      res.send(rider_result);
+    });
+
+    //* ----------------------  APi for Rider to Accept, Reject, or Update Status ----------------------
+    app.patch("/parcel/rider-update/:id", firebaseTokenVarify,async (req, res) => {
+        const parcel_id = req.params.id;
+        const { action, status, rider_id } = req.body;
+        const parcelQuery = { _id: new ObjectId(parcel_id) };
+        const riderQuery = rider_id ? { _id: new ObjectId(rider_id) } : null;
+
+        try {
+          if (action === "accept") {
+            //  Fetch parcel to get the actual price securely
+            const parcel = await parcelCollection.findOne(parcelQuery);
+            // 25% of the parcel amount, or minimum 50 TK
+            const calculatedEarning = Math.max(50, Math.floor((parcel.amount || 0) * 0.25), );
+            //  Update parcel to on-transit & set earning fields
+            const result = await parcelCollection.updateOne(parcelQuery, {
+              $set: {
+                deliveryStatus: "on-transit",
+                rider_earning: calculatedEarning,
+                cashout_status: "no",
+              },
+            });
+            return res.send({ ...result, rider_earning: calculatedEarning });
+          }
+
+          if (action === "reject") {
+            const parcelUpdate = await parcelCollection.updateOne(parcelQuery, {
+              $set: { deliveryStatus: "awaiting_pickup" },
+              $unset: { rider_id: "", rider_name: "", rider_email: "" },
+            });
+
+            const riderUpdate = await riderCollection.updateOne(riderQuery, {
+              $set: { work_status: "available" },
+            });
+            return res.send({ parcelUpdate, riderUpdate });
+          }
+
+          if (action === "update_status") {
+            const parcelUpdate = await parcelCollection.updateOne(parcelQuery, {
+              $set: { deliveryStatus: status },
+            });
+
+            if (status === "delivered") {
+              await riderCollection.updateOne(riderQuery, {
+                $set: { work_status: "available" },
+              });
+            }
+            return res.send(parcelUpdate);
+          }
+
+          if (action === "cashout") {
+            const result = await parcelCollection.updateOne(parcelQuery, {
+              $set: { cashout_status: "yes" },
+            });
+            return res.send(result);
+          }
+        } catch (error) {
+          res.status(500).send({ message: "Internal Server Error", error });
         }
-      }
-      const rider_result = await riderCollection.updateOne(riderQuery,riderUpdate) ;
-      res.send(rider_result) ;
-    })
+      },
+    );
 
     //* -------------------- Api to Add percel to Database ---------------------------
     app.post("/parcel", async (req, res) => {
@@ -153,19 +221,17 @@ async function run() {
     });
 
     //* --------------- APi to get Payment history from db -----------------
-    app.get('/payhistory',firebaseTokenVarify,async(req,res)=>{
-      const query = {} ;
-      const email = req.query.email ;
+    app.get("/payhistory", firebaseTokenVarify, async (req, res) => {
+      const query = {};
+      const email = req.query.email;
       // console.log(req) ;
-      if(email){
-        query.customer_email = email 
+      if (email) {
+        query.customer_email = email;
       }
-      const cursor = await paymentCollection.find(query)
-      const result = await cursor.toArray() ;
-      res.send(result) ;
-    })
-
-
+      const cursor = await paymentCollection.find(query);
+      const result = await cursor.toArray();
+      res.send(result);
+    });
 
     // *? ================================ PAYMENT FUNCTIONALITY(STRIPE) RELATED APIS ==========================================
     //* ------------- Stripe Payment Gateway ----------------------
@@ -202,39 +268,39 @@ async function run() {
       res.send({ url: session.url });
     });
 
-
     //* ------------------ Stripe Payment Varify and Update Info --------------------------
     app.patch("/session-status", async (req, res) => {
       const session_id = req.query.session_id;
       const session = await stripe.checkout.sessions.retrieve(session_id);
       // console.log(session);
-      const tracking_id = generateTrackingId() ;
+      const tracking_id = generateTrackingId();
 
       //------------- Prevent Duplicate Payment Entry ------------------
-      const transaction_id = session.payment_intent ;
-      const query = {transaction_id : transaction_id} 
-      const payment_exist = await paymentCollection.findOne(query) ;
-      if(payment_exist){
-        return  res.send({message : 'already Exist !!' , tracking_id : tracking_id ,
-          transaction_id : payment_exist.transaction_id ,
-          tracking_id : payment_exist.tracking_id
-          })
-      } 
-
+      const transaction_id = session.payment_intent;
+      const query = { transaction_id: transaction_id };
+      const payment_exist = await paymentCollection.findOne(query);
+      if (payment_exist) {
+        return res.send({
+          message: "already Exist !!",
+          tracking_id: tracking_id,
+          transaction_id: payment_exist.transaction_id,
+          tracking_id: payment_exist.tracking_id,
+        });
+      }
 
       if (session.payment_status === "paid") {
         const parcel_id = session.metadata.parcel_id;
         const query = { _id: new ObjectId(parcel_id) };
         const update = {
           $set: {
-            deliveryStatus : 'awaiting_pickup',
+            deliveryStatus: "awaiting_pickup",
             paymentStatus: "paid",
-            tracking_id : tracking_id ,
+            tracking_id: tracking_id,
           },
         };
         const result = await parcelCollection.updateOne(query, update);
 
-        //* ------------  Create payment history info --------------- 
+        //* ------------  Create payment history info ---------------
         const payment = {
           amount: session.amount_total / 100,
           currency: session.currency,
@@ -244,156 +310,159 @@ async function run() {
           receiverContact: session.metadata.receiver_contact,
           receiverName: session.metadata.receiver_name,
           transaction_id: session.payment_intent,
-          tracking_id : tracking_id ,
+          tracking_id: tracking_id,
           payment_status: session.payment_status,
           paidAt: new Date(),
         };
 
-        const newPayment = await paymentCollection.insertOne(payment) ;
+        const newPayment = await paymentCollection.insertOne(payment);
         res.send({
-          success : true ,
-          modified_parce: result ,
-          tracking_id : tracking_id ,
-          transaction_id : session.payment_intent ,
-          payment_info : newPayment , 
+          success: true,
+          modified_parce: result,
+          tracking_id: tracking_id,
+          transaction_id: session.payment_intent,
+          payment_info: newPayment,
         });
-
-        
       }
     });
 
-
     // *? ================================ User Related APis ==========================================
     // *-------------- api to save new user to database with role user -----------------------
-    app.post("/users" ,async(req,res) => {
-      const query = {} ;
-      const userInfo = req.body ;
-      const email = userInfo?.email ;
-      if(email){
-        query.email = email ;
+    app.post("/users", async (req, res) => {
+      const query = {};
+      const userInfo = req.body;
+      const email = userInfo?.email;
+      if (email) {
+        query.email = email;
       }
-      const userExist = await userCollection.findOne(query) ;
-      if(userExist){
-        return res.send({message:"user already Exist !"}) ;
+      const userExist = await userCollection.findOne(query);
+      if (userExist) {
+        return res.send({ message: "user already Exist !" });
       }
-      userInfo.createdAt = new Date() ;
-      userInfo.role = 'user' ;
-      const result = await userCollection.insertOne(userInfo) ;
-      res.send(result) ;
-    })
+      userInfo.createdAt = new Date();
+      userInfo.role = "user";
+      const result = await userCollection.insertOne(userInfo);
+      res.send(result);
+    });
 
     // *-------------- api to get all the user from database-----------------------
-    app.get('/users',async(req,res)=>{
-      const searchedValue = req.query.searched ;
-      const query = {} 
-      if(searchedValue){
+    app.get("/users", async (req, res) => {
+      const searchedValue = req.query.searched;
+      const query = {};
+      if (searchedValue) {
         query.$or = [
-          {displayName : {$regex : searchedValue , $options : 'i'}} ,
-          {name : {$regex : searchedValue , $options : 'i'}} ,
-          {email : {$regex : searchedValue , $options : 'i'}}
-        ]
+          { displayName: { $regex: searchedValue, $options: "i" } },
+          { name: { $regex: searchedValue, $options: "i" } },
+          { email: { $regex: searchedValue, $options: "i" } },
+        ];
       }
-      const cursor = await userCollection.find(query) ;
+      const cursor = await userCollection.find(query);
       const result = await cursor.toArray();
-      res.send(result) ;
-    })
-
+      res.send(result);
+    });
 
     // *-------------- api to get a the user by Role from database-----------------------
-    app.get('/users/:email/role' , async(req,res)=>{
-      const {email} = req.params ;
-      const query = {email} ;
-      const result = await userCollection.findOne(query) ;
-      res.send({role : result?.role || 'user'})
-    })
+    app.get("/users/:email/role", async (req, res) => {
+      const { email } = req.params;
+      const query = { email };
+      const result = await userCollection.findOne(query);
+      res.send({ role: result?.role || "user" });
+    });
 
     // *-------------- api to get promote or Revoke a user to A Role-----------------------
-    app.post('/users/:id' ,firebaseTokenVarify,varifyAdmin,async(req,res)=>{
-      const user_id = req.params.id
-      const {status} = req.body ;
-      const query = {_id : new ObjectId(user_id)}
-      const update = {
-        $set : {
-          role : status
-        }
-      }
-      const result = await userCollection.updateOne(query,update) ;
-      res.send(result) ;
-    })
-
+    app.post(
+      "/users/:id",
+      firebaseTokenVarify,
+      varifyAdmin,
+      async (req, res) => {
+        const user_id = req.params.id;
+        const { status } = req.body;
+        const query = { _id: new ObjectId(user_id) };
+        const update = {
+          $set: {
+            role: status,
+          },
+        };
+        const result = await userCollection.updateOne(query, update);
+        res.send(result);
+      },
+    );
 
     // *-------------- api to save new Rider Request to database -----------------------
-    app.post('/riders' , async(req,res)=>{
-      const riderInfo = req.body ;
-      const query = {} ;
-      const email = riderInfo.email ;
-      riderInfo.createdAt = new Date() ;
-      riderInfo.status = "pending" ;
-      if(email){
-        query.email = email ;
+    app.post("/riders", async (req, res) => {
+      const riderInfo = req.body;
+      const query = {};
+      const email = riderInfo.email;
+      riderInfo.createdAt = new Date();
+      riderInfo.status = "pending";
+      if (email) {
+        query.email = email;
       }
-      const existingRider = await riderCollection.findOne(query) ;
-      if(existingRider){
-        return res.send({message : "Rider Already Exist !"})
+      const existingRider = await riderCollection.findOne(query);
+      if (existingRider) {
+        return res.send({ message: "Rider Already Exist !" });
       }
-      const result = await riderCollection.insertOne(riderInfo) ;
-      res.send(result) ;
-    })
+      const result = await riderCollection.insertOne(riderInfo);
+      res.send(result);
+    });
 
     // *-------------- api to get all the Rider from database -----------------------
-    app.get('/riders' ,async(req,res)=>{
-      const {status,work_status,district} = req.query ;
-      const query = {} ;
-      if(status){
-        query.status = status 
+    app.get("/riders", async (req, res) => {
+      const { status, work_status, district } = req.query;
+      const query = {};
+      if (status) {
+        query.status = status;
       }
-      if(work_status){
-        query.work_status = work_status
+      if (work_status) {
+        query.work_status = work_status;
       }
-      if(district){
-        query.district = district
+      if (district) {
+        query.district = district;
       }
-      const cursor = await riderCollection.find(query).sort({createdAt : -1})
-      const result = await cursor.toArray() ;
-      res.send(result) ;
-    })
+      const cursor = await riderCollection.find(query).sort({ createdAt: -1 });
+      const result = await cursor.toArray();
+      res.send(result);
+    });
 
     // *-------------- api to get a Rider from database by Specific id-----------------------
-    app.get('/riders/:id' , firebaseTokenVarify,async(req,res)=>{
-      const rider_id = req.params.id ;
-      const query = {_id : new ObjectId(rider_id)} ;
-      const result = await riderCollection.findOne(query) ;
-      res.send(result) ;
-    })
+    app.get("/riders/:id", firebaseTokenVarify, async (req, res) => {
+      const rider_id = req.params.id;
+      const query = { _id: new ObjectId(rider_id) };
+      const result = await riderCollection.findOne(query);
+      res.send(result);
+    });
 
     // *-------------- api to Approve OR Reject a Rider Application by Specific id-----------------------
-    app.post('/riders/:id' , firebaseTokenVarify,varifyAdmin,async(req,res)=>{
-      const rider_id = req.params.id ;
-      const user_email = req.body.email ;
-      const status = req.body.status ;
-      const query = {_id : new ObjectId(rider_id)}
-      const updateFields = {
-        $set : {
-          status : status, 
-          work_status : 'available'
+    app.post(
+      "/riders/:id",
+      firebaseTokenVarify,
+      varifyAdmin,
+      async (req, res) => {
+        const rider_id = req.params.id;
+        const user_email = req.body.email;
+        const status = req.body.status;
+        const query = { _id: new ObjectId(rider_id) };
+        const updateFields = {
+          $set: {
+            status: status,
+            work_status: "available",
+          },
+        };
+        const result = await riderCollection.updateOne(query, updateFields);
+        if (status === "approved") {
+          const roleQuery = { email: user_email };
+          const roleUpdate = {
+            $set: {
+              role: "rider",
+            },
+          };
+          const result = await userCollection.updateOne(roleQuery, roleUpdate);
         }
-      }
-      const result = await riderCollection.updateOne(query,updateFields)
-      if(status ==="approved"){
-        const roleQuery = {email : user_email}
-        const roleUpdate = {
-          $set : {
-            role : 'rider'
-          }
-        }
-        const result = await userCollection.updateOne(roleQuery,roleUpdate)
-      }
-      res.send(result) ;
-    })
+        res.send(result);
+      },
+    );
 
-    
-
-    //!================================  Reminder  -> Comment this Out when deploying to vercel ================================ 
+    //!================================  Reminder  -> Comment this Out when deploying to vercel ================================
     // await client.db("admin").command({ ping: 1 });
     console.log(
       "Pinged your deployment. You successfully connected to MongoDB!",
@@ -403,8 +472,6 @@ async function run() {
   }
 }
 run().catch(console.dir);
-
-
 
 // =============== Listener  ============================
 app.listen(port, () => {
