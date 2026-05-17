@@ -77,6 +77,16 @@ async function run() {
     const userCollection = database.collection("users") ;
     const riderCollection = database.collection("riders") ;
 
+    // *? ================================ MiddleWare to Varify Admin ==========================================
+    const varifyAdmin = async(req,res,next) => {
+      const email = req.token_email ;
+      const query = {email} ;
+      const user = await userCollection.findOne(query) ;
+      if(!user || user.role !== 'admin'){
+        return res.status(403).send({message: "Unauthorize Access ! "}) ;
+      }
+      next() ;
+    }
 
 
    // *? ================================ Parcel Related APIs ==============================================
@@ -246,12 +256,21 @@ async function run() {
     })
 
     // *-------------- api to get all the user from database-----------------------
-    app.get('/users',firebaseTokenVarify,async(req,res)=>{
+    app.get('/users',async(req,res)=>{
+      const searchedValue = req.query.searched ;
       const query = {} 
+      if(searchedValue){
+        query.$or = [
+          {displayName : {$regex : searchedValue , $options : 'i'}} ,
+          {name : {$regex : searchedValue , $options : 'i'}} ,
+          {email : {$regex : searchedValue , $options : 'i'}}
+        ]
+      }
       const cursor = await userCollection.find(query) ;
       const result = await cursor.toArray();
       res.send(result) ;
     })
+    
 
     // *-------------- api to get a the user by Role from database-----------------------
     app.get('/users/:email/role' , async(req,res)=>{
@@ -262,7 +281,7 @@ async function run() {
     })
 
     // *-------------- api to get promote or Revoke a user to A Role-----------------------
-    app.post('/users/:id' , async(req,res)=>{
+    app.post('/users/:id' ,firebaseTokenVarify,varifyAdmin,async(req,res)=>{
       const user_id = req.params.id
       const {status} = req.body ;
       const query = {_id : new ObjectId(user_id)}
@@ -295,7 +314,7 @@ async function run() {
     })
 
     // *-------------- api to get all the Rider from database -----------------------
-    app.get('/riders' , async(req,res)=>{
+    app.get('/riders' ,firebaseTokenVarify ,async(req,res)=>{
       const query = {} ;
       const cursor = await riderCollection.find(query)
       const result = await cursor.toArray() ;
@@ -303,14 +322,14 @@ async function run() {
     })
 
     // *-------------- api to get a Rider from database by Specific id-----------------------
-    app.get('/riders/:id' , async(req,res)=>{
+    app.get('/riders/:id' , firebaseTokenVarify,async(req,res)=>{
       const rider_id = req.params.id ;
       const query = {_id : new ObjectId(rider_id)} ;
       const result = await riderCollection.findOne(query) ;
       res.send(result) ;
     })
     // *-------------- api to Approve OR Reject a Rider Application by Specific id-----------------------
-    app.post('/riders/:id' , async(req,res)=>{
+    app.post('/riders/:id' , firebaseTokenVarify,varifyAdmin,async(req,res)=>{
       const rider_id = req.params.id ;
       const user_email = req.body.email ;
       const status = req.body.status ;
