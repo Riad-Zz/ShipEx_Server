@@ -162,10 +162,11 @@ async function run() {
       res.send(rider_result);
     });
 
-    
-
     //* ----------------------  APi for Rider to Accept, Reject, or Update Status ----------------------
-    app.patch( "/parcel/rider-update/:id",firebaseTokenVarify,async (req, res) => {
+    app.patch(
+      "/parcel/rider-update/:id",
+      firebaseTokenVarify,
+      async (req, res) => {
         const parcel_id = req.params.id;
         const { action, status, rider_id } = req.body;
         const parcelQuery = { _id: new ObjectId(parcel_id) };
@@ -252,7 +253,6 @@ async function run() {
         }
       },
     );
-
 
     //* -------------------- Api to Add percel to Database ---------------------------
     app.post("/parcel", async (req, res) => {
@@ -515,80 +515,148 @@ async function run() {
 
     // *? ================================ Dashboard Related APis ==========================================
     //* 1. Admin Dashboard Stats (Uses Aggregation)
-    app.get('/admin-stats', firebaseTokenVarify, varifyAdmin, async (req, res) => {
+    app.get(
+      "/admin-stats",
+      firebaseTokenVarify,
+      varifyAdmin,
+      async (req, res) => {
         try {
-            const totalParcels = await parcelCollection.estimatedDocumentCount();
-            const totalUsers = await userCollection.countDocuments({ role: 'user' });
-            const totalRiders = await userCollection.countDocuments({ role: 'rider' });
+          const totalParcels = await parcelCollection.estimatedDocumentCount();
+          const totalUsers = await userCollection.countDocuments({
+            role: "user",
+          });
+          const totalRiders = await userCollection.countDocuments({
+            role: "rider",
+          });
 
-            // Calculate Total Revenue from Payments
-            const revenueResult = await paymentCollection.aggregate([
-                { $match: { payment_status: 'paid' } },
-                { $group: { _id: null, total: { $sum: "$amount" } } }
-            ]).toArray();
-            const totalRevenue = revenueResult.length > 0 ? revenueResult[0].total : 0;
+          // Calculate Total Revenue from Payments
+          const revenueResult = await paymentCollection
+            .aggregate([
+              { $match: { payment_status: "paid" } },
+              { $group: { _id: null, total: { $sum: "$amount" } } },
+            ])
+            .toArray();
+          const totalRevenue =
+            revenueResult.length > 0 ? revenueResult[0].total : 0;
 
-            // Chart Data: Revenue grouped by Date (Last 7 Days)
-            const chartData = await paymentCollection.aggregate([
-                { $match: { payment_status: 'paid' } },
-                { $group: { 
-                    _id: { $dateToString: { format: "%Y-%m-%d", date: "$paidAt" } }, 
-                    Revenue: { $sum: "$amount" } 
-                }},
-                { $sort: { _id: 1 } },
-                { $limit: 7 }
-            ]).toArray();
+          // Chart Data: Revenue grouped by Date (Last 7 Days)
+          const chartData = await paymentCollection
+            .aggregate([
+              { $match: { payment_status: "paid" } },
+              {
+                $group: {
+                  _id: {
+                    $dateToString: { format: "%Y-%m-%d", date: "$paidAt" },
+                  },
+                  Revenue: { $sum: "$amount" },
+                },
+              },
+              { $sort: { _id: 1 } },
+              { $limit: 7 },
+            ])
+            .toArray();
 
-            // Format chart data for Recharts { name: 'YYYY-MM-DD', Revenue: 500 }
-            const formattedChartData = chartData.map(data => ({
-                name: data._id,
-                Revenue: data.Revenue
-            }));
+          const formattedChartData = chartData.map((data) => ({
+            name: data._id,
+            Revenue: data.Revenue,
+          }));
 
-            res.send({ totalParcels, totalUsers, totalRiders, totalRevenue, chartData: formattedChartData });
+          // --- NEW DATA FOR TABLES ---
+          // Latest 5 parcels
+          const recentParcels = await parcelCollection
+            .find()
+            .sort({ createdAt: -1 })
+            .limit(5)
+            .toArray();
+
+          // Latest 5 successful payments
+          const recentPayments = await paymentCollection
+            .find({ payment_status: "paid" })
+            .sort({ paidAt: -1 })
+            .limit(5)
+            .toArray();
+
+          // Parcels needing rider assignment (Alerts)
+          const actionRequired = await parcelCollection
+            .find({ deliveryStatus: "awaiting_pickup" })
+            .sort({ createdAt: -1 })
+            .limit(4)
+            .toArray();
+
+          res.send({
+            totalParcels,
+            totalUsers,
+            totalRiders,
+            totalRevenue,
+            chartData: formattedChartData,
+            recentParcels,
+            recentPayments,
+            actionRequired,
+          });
         } catch (error) {
-            res.status(500).send({ message: "Error fetching admin stats", error });
+          res
+            .status(500)
+            .send({ message: "Error fetching admin stats", error });
         }
-    });
+      },
+    );
 
     //* 2. Rider Dashboard Stats
-    app.get('/rider-stats/:email', firebaseTokenVarify, async (req, res) => {
-        const email = req.params.email;
-        try {
-            const deliveredCount = await parcelCollection.countDocuments({ rider_email: email, deliveryStatus: 'delivered' });
-            const activeCount = await parcelCollection.countDocuments({ rider_email: email, deliveryStatus: { $in: ['rider_assigned', 'picked_up', 'on-transit'] } });
-            
-            // Calculate Total Earnings (only from delivered parcels)
-            const earningResult = await parcelCollection.aggregate([
-                { $match: { rider_email: email, deliveryStatus: 'delivered' } },
-                { $group: { _id: null, total: { $sum: "$rider_earning" } } }
-            ]).toArray();
-            const totalEarnings = earningResult.length > 0 ? earningResult[0].total : 0;
+    app.get("/rider-stats/:email", firebaseTokenVarify, async (req, res) => {
+      const email = req.params.email;
+      try {
+        const deliveredCount = await parcelCollection.countDocuments({
+          rider_email: email,
+          deliveryStatus: "delivered",
+        });
+        const activeCount = await parcelCollection.countDocuments({
+          rider_email: email,
+          deliveryStatus: {
+            $in: ["rider_assigned", "picked_up", "on-transit"],
+          },
+        });
 
-            res.send({ deliveredCount, activeCount, totalEarnings });
-        } catch (error) {
-            res.status(500).send({ message: "Error fetching rider stats", error });
-        }
+        // Calculate Total Earnings (only from delivered parcels)
+        const earningResult = await parcelCollection
+          .aggregate([
+            { $match: { rider_email: email, deliveryStatus: "delivered" } },
+            { $group: { _id: null, total: { $sum: "$rider_earning" } } },
+          ])
+          .toArray();
+        const totalEarnings =
+          earningResult.length > 0 ? earningResult[0].total : 0;
+
+        res.send({ deliveredCount, activeCount, totalEarnings });
+      } catch (error) {
+        res.status(500).send({ message: "Error fetching rider stats", error });
+      }
     });
 
     //* 3. User Dashboard Stats
-    app.get('/user-stats/:email', firebaseTokenVarify, async (req, res) => {
-        const email = req.params.email;
-        try {
-            const totalSent = await parcelCollection.countDocuments({ senderEmail: email });
-            const pendingCount = await parcelCollection.countDocuments({ senderEmail: email, deliveryStatus: { $ne: 'delivered' } });
-            
-            // Calculate Total Spent
-            const spentResult = await paymentCollection.aggregate([
-                { $match: { customer_email: email, payment_status: 'paid' } },
-                { $group: { _id: null, total: { $sum: "$amount" } } }
-            ]).toArray();
-            const totalSpent = spentResult.length > 0 ? spentResult[0].total : 0;
+    app.get("/user-stats/:email", firebaseTokenVarify, async (req, res) => {
+      const email = req.params.email;
+      try {
+        const totalSent = await parcelCollection.countDocuments({
+          senderEmail: email,
+        });
+        const pendingCount = await parcelCollection.countDocuments({
+          senderEmail: email,
+          deliveryStatus: { $ne: "delivered" },
+        });
 
-            res.send({ totalSent, pendingCount, totalSpent });
-        } catch (error) {
-            res.status(500).send({ message: "Error fetching user stats", error });
-        }
+        // Calculate Total Spent
+        const spentResult = await paymentCollection
+          .aggregate([
+            { $match: { customer_email: email, payment_status: "paid" } },
+            { $group: { _id: null, total: { $sum: "$amount" } } },
+          ])
+          .toArray();
+        const totalSpent = spentResult.length > 0 ? spentResult[0].total : 0;
+
+        res.send({ totalSent, pendingCount, totalSpent });
+      } catch (error) {
+        res.status(500).send({ message: "Error fetching user stats", error });
+      }
     });
 
     //!================================  Reminder  -> Comment this Out when deploying to vercel ================================
