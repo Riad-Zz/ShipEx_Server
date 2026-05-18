@@ -680,6 +680,22 @@ async function run() {
         }
     });
 
+
+    //* ----------------------  APi to get Parcel Timeline Log ----------------------
+    app.get("/parcellog/:tracking_id", async (req, res) => {
+        const tracking_id = req.params.tracking_id;
+        try {
+            const logs = await logCollection.find({ tracking_id: tracking_id }).sort({ loggedAt: 1 }).toArray();
+            const parcelInfo = await parcelCollection.findOne({ tracking_id: tracking_id });
+            if (!logs || logs.length === 0) {
+                return res.status(404).send({ message: "No tracking data found for this ID" });
+            }
+            res.send({ logs, parcelInfo });
+        } catch (error) {
+            res.status(500).send({ message: "Internal Server Error", error });
+        }
+    });
+
     //!================================  Reminder  -> Comment this Out when deploying to vercel ================================
     // await client.db("admin").command({ ping: 1 });
     console.log(
