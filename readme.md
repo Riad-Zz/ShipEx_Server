@@ -62,7 +62,7 @@ node index.js
 
 ## Deployment
 
-Deployed on **Render**. Connect the repo to Render and set all env vars in the dashboard. The `client.connect()` call and ping command in `index.js` are intentionally commented out for serverless compatibility — leave them as is.
+Deployed on **Vercel**. Connect the repo to Render and set all env vars in the dashboard. The `client.connect()` call and ping command in `index.js` are intentionally commented out for serverless compatibility — leave them as is.
 
 ---
 
