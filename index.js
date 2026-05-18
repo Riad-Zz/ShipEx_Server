@@ -602,61 +602,82 @@ async function run() {
     );
 
     //* 2. Rider Dashboard Stats
-    app.get("/rider-stats/:email", firebaseTokenVarify, async (req, res) => {
-      const email = req.params.email;
-      try {
-        const deliveredCount = await parcelCollection.countDocuments({
-          rider_email: email,
-          deliveryStatus: "delivered",
-        });
-        const activeCount = await parcelCollection.countDocuments({
-          rider_email: email,
-          deliveryStatus: {
-            $in: ["rider_assigned", "picked_up", "on-transit"],
-          },
-        });
+    app.get('/rider-stats/:email', firebaseTokenVarify, async (req, res) => {
+        const email = req.params.email;
+        try {
+            const deliveredCount = await parcelCollection.countDocuments({ rider_email: email, deliveryStatus: 'delivered' });
+            const activeCount = await parcelCollection.countDocuments({ rider_email: email, deliveryStatus: { $in: ['rider_assigned', 'picked_up', 'on-transit'] } });
+            
+            const earningResult = await parcelCollection.aggregate([
+                { $match: { rider_email: email, deliveryStatus: 'delivered' } },
+                { $group: { _id: null, total: { $sum: "$rider_earning" } } }
+            ]).toArray();
+            const totalEarnings = earningResult.length > 0 ? earningResult[0].total : 0;
 
-        // Calculate Total Earnings (only from delivered parcels)
-        const earningResult = await parcelCollection
-          .aggregate([
-            { $match: { rider_email: email, deliveryStatus: "delivered" } },
-            { $group: { _id: null, total: { $sum: "$rider_earning" } } },
-          ])
-          .toArray();
-        const totalEarnings =
-          earningResult.length > 0 ? earningResult[0].total : 0;
+            // Chart Data: Earnings grouped by date
+            const earningChartData = await parcelCollection.aggregate([
+                { $match: { rider_email: email, deliveryStatus: 'delivered' } },
+                { $group: { 
+                    _id: { $dateToString: { format: "%Y-%m-%d", date: "$createdAt" } }, 
+                    Earnings: { $sum: "$rider_earning" } 
+                }},
+                { $sort: { _id: 1 } },
+                { $limit: 7 }
+            ]).toArray();
+            
+            const formattedChartData = earningChartData.map(data => ({
+                name: data._id,
+                Earnings: data.Earnings
+            }));
 
-        res.send({ deliveredCount, activeCount, totalEarnings });
-      } catch (error) {
-        res.status(500).send({ message: "Error fetching rider stats", error });
-      }
+            // Recent Tasks
+            const recentTasks = await parcelCollection.find({ rider_email: email }).sort({ createdAt: -1 }).limit(5).toArray();
+
+            res.send({ deliveredCount, activeCount, totalEarnings, chartData: formattedChartData, recentTasks });
+        } catch (error) {
+            res.status(500).send({ message: "Error fetching rider stats", error });
+        }
     });
 
     //* 3. User Dashboard Stats
-    app.get("/user-stats/:email", firebaseTokenVarify, async (req, res) => {
-      const email = req.params.email;
-      try {
-        const totalSent = await parcelCollection.countDocuments({
-          senderEmail: email,
-        });
-        const pendingCount = await parcelCollection.countDocuments({
-          senderEmail: email,
-          deliveryStatus: { $ne: "delivered" },
-        });
+    app.get('/user-stats/:email', firebaseTokenVarify, async (req, res) => {
+        const email = req.params.email;
+        try {
+            const totalSent = await parcelCollection.countDocuments({ senderEmail: email });
+            const pendingCount = await parcelCollection.countDocuments({ senderEmail: email, deliveryStatus: { $ne: 'delivered' } });
+            
+            const spentResult = await paymentCollection.aggregate([
+                { $match: { customer_email: email, payment_status: 'paid' } },
+                { $group: { _id: null, total: { $sum: "$amount" } } }
+            ]).toArray();
+            const totalSpent = spentResult.length > 0 ? spentResult[0].total : 0;
 
-        // Calculate Total Spent
-        const spentResult = await paymentCollection
-          .aggregate([
-            { $match: { customer_email: email, payment_status: "paid" } },
-            { $group: { _id: null, total: { $sum: "$amount" } } },
-          ])
-          .toArray();
-        const totalSpent = spentResult.length > 0 ? spentResult[0].total : 0;
+            // Chart Data: Expenses grouped by date
+            const expenseChartData = await paymentCollection.aggregate([
+                { $match: { customer_email: email, payment_status: 'paid' } },
+                { $group: { 
+                    _id: { $dateToString: { format: "%Y-%m-%d", date: "$paidAt" } }, 
+                    Spent: { $sum: "$amount" } 
+                }},
+                { $sort: { _id: 1 } },
+                { $limit: 7 }
+            ]).toArray();
+            
+            const formattedChartData = expenseChartData.map(data => ({
+                name: data._id,
+                Spent: data.Spent
+            }));
 
-        res.send({ totalSent, pendingCount, totalSpent });
-      } catch (error) {
-        res.status(500).send({ message: "Error fetching user stats", error });
-      }
+            // Recent Shipments
+            const recentShipments = await parcelCollection.find({ senderEmail: email }).sort({ createdAt: -1 }).limit(5).toArray();
+            
+            // Unpaid Alerts
+            const unpaidAlerts = await parcelCollection.find({ senderEmail: email, paymentStatus: 'unpaid' }).sort({ createdAt: -1 }).limit(4).toArray();
+
+            res.send({ totalSent, pendingCount, totalSpent, chartData: formattedChartData, recentShipments, unpaidAlerts });
+        } catch (error) {
+            res.status(500).send({ message: "Error fetching user stats", error });
+        }
     });
 
     //!================================  Reminder  -> Comment this Out when deploying to vercel ================================
