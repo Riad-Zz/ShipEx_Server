@@ -77,6 +77,7 @@ async function run() {
     const paymentCollection = database.collection("payments");
     const userCollection = database.collection("users");
     const riderCollection = database.collection("riders");
+    const logCollection = database.collection("parcellog");
 
     // *? ================================ MiddleWare to Varify Admin ==========================================
     const varifyAdmin = async (req, res, next) => {
@@ -129,6 +130,7 @@ async function run() {
       const { rider_id, rider_name, rider_email } = req.body;
       const parcel_id = req.params.id;
       const query = { _id: new ObjectId(parcel_id) };
+
       const updatedInfo = {
         $set: {
           deliveryStatus: "rider_assigned",
@@ -148,23 +150,36 @@ async function run() {
         riderQuery,
         riderUpdate,
       );
+      // ------------  CREATE PARCEL LOG (TIMELINE) ---------------
+      const parcelInfo = await parcelCollection.findOne(query);
+      await logCollection.insertOne({
+        parcel_id: parcel_id,
+        tracking_id: parcelInfo.tracking_id,
+        deliveryStatus: "rider_assigned",
+        loggedAt: new Date(),
+      });
+
       res.send(rider_result);
     });
 
+    
+
     //* ----------------------  APi for Rider to Accept, Reject, or Update Status ----------------------
-    app.patch("/parcel/rider-update/:id", firebaseTokenVarify,async (req, res) => {
+    app.patch( "/parcel/rider-update/:id",firebaseTokenVarify,async (req, res) => {
         const parcel_id = req.params.id;
         const { action, status, rider_id } = req.body;
         const parcelQuery = { _id: new ObjectId(parcel_id) };
         const riderQuery = rider_id ? { _id: new ObjectId(rider_id) } : null;
 
         try {
+          // We fetch the parcel first because we need it for calculating earning AND logging the tracking_id
+          const parcel = await parcelCollection.findOne(parcelQuery);
+
           if (action === "accept") {
-            //  Fetch parcel to get the actual price securely
-            const parcel = await parcelCollection.findOne(parcelQuery);
-            // 25% of the parcel amount, or minimum 50 TK
-            const calculatedEarning = Math.max(50, Math.floor((parcel.amount || 0) * 0.25), );
-            //  Update parcel to on-transit & set earning fields
+            const calculatedEarning = Math.max(
+              50,
+              Math.floor((parcel.amount || 0) * 0.25),
+            );
             const result = await parcelCollection.updateOne(parcelQuery, {
               $set: {
                 deliveryStatus: "on-transit",
@@ -172,6 +187,15 @@ async function run() {
                 cashout_status: "no",
               },
             });
+
+            //------------  CREATE PARCEL LOG ---------------
+            await logCollection.insertOne({
+              parcel_id: parcel_id,
+              tracking_id: parcel.tracking_id,
+              deliveryStatus: "on-transit",
+              loggedAt: new Date(),
+            });
+
             return res.send({ ...result, rider_earning: calculatedEarning });
           }
 
@@ -184,6 +208,15 @@ async function run() {
             const riderUpdate = await riderCollection.updateOne(riderQuery, {
               $set: { work_status: "available" },
             });
+
+            // ------------  CREATE PARCEL LOG ---------------
+            await logCollection.insertOne({
+              parcel_id: parcel_id,
+              tracking_id: parcel.tracking_id,
+              deliveryStatus: "awaiting_pickup", // Went back to awaiting pickup
+              loggedAt: new Date(),
+            });
+
             return res.send({ parcelUpdate, riderUpdate });
           }
 
@@ -197,6 +230,14 @@ async function run() {
                 $set: { work_status: "available" },
               });
             }
+            //------------  CREATE PARCEL LOG ---------------
+            await logCollection.insertOne({
+              parcel_id: parcel_id,
+              tracking_id: parcel.tracking_id,
+              deliveryStatus: status, // "picked_up", "delivered", etc.
+              loggedAt: new Date(),
+            });
+
             return res.send(parcelUpdate);
           }
 
@@ -211,6 +252,7 @@ async function run() {
         }
       },
     );
+
 
     //* -------------------- Api to Add percel to Database ---------------------------
     app.post("/parcel", async (req, res) => {
@@ -298,6 +340,7 @@ async function run() {
             tracking_id: tracking_id,
           },
         };
+
         const result = await parcelCollection.updateOne(query, update);
 
         //* ------------  Create payment history info ---------------
@@ -316,6 +359,14 @@ async function run() {
         };
 
         const newPayment = await paymentCollection.insertOne(payment);
+        // ------------  CREATE PARCEL LOG (TIMELINE) ---------------
+        await logCollection.insertOne({
+          parcel_id: session.metadata.parcel_id,
+          tracking_id: tracking_id,
+          deliveryStatus: "awaiting_pickup",
+          loggedAt: new Date(),
+        });
+
         res.send({
           success: true,
           modified_parce: result,
