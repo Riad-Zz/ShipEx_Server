@@ -440,7 +440,7 @@ async function run() {
     );
 
     // *-------------- api to save new Rider Request to database -----------------------
-    app.post("/riders", async (req, res) => {
+    app.post("/riders",firebaseTokenVarify,async (req, res) => {
       const riderInfo = req.body;
       const query = {};
       const email = riderInfo.email;
@@ -458,7 +458,7 @@ async function run() {
     });
 
     // *-------------- api to get all the Rider from database -----------------------
-    app.get("/riders", async (req, res) => {
+    app.get("/riders", firebaseTokenVarify,async (req, res) => {
       const { status, work_status, district } = req.query;
       const query = {};
       if (status) {
@@ -682,7 +682,7 @@ async function run() {
 
 
     //* ----------------------  APi to get Parcel Timeline Log ----------------------
-    app.get("/parcellog/:tracking_id", async (req, res) => {
+    app.get("/parcellog/:tracking_id",firebaseTokenVarify,async (req, res) => {
         const tracking_id = req.params.tracking_id;
         try {
             const logs = await logCollection.find({ tracking_id: tracking_id }).sort({ loggedAt: 1 }).toArray();
